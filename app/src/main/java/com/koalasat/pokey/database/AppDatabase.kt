@@ -127,14 +127,34 @@ val MIGRATION_10_11 =
         }
     }
 
+val MIGRATION_11_12 =
+    object : Migration(11, 12) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `subscription` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `value` TEXT NOT NULL,
+                    `type` TEXT NOT NULL,
+                    `label` TEXT,
+                    `enabled` INTEGER NOT NULL DEFAULT 1,
+                    `createdAt` INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_subscription_value` ON `subscription` (`value`)")
+        }
+    }
+
 @Database(
     entities = [
         NotificationEntity::class,
         RelayEntity::class,
         MuteEntity::class,
         UserEntity::class,
+        SubscriptionEntity::class,
     ],
-    version = 11,
+    version = 12,
 )
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
@@ -158,6 +178,7 @@ abstract class AppDatabase : RoomDatabase() {
                         .addMigrations(MIGRATION_8_9)
                         .addMigrations(MIGRATION_9_10)
                         .addMigrations(MIGRATION_10_11)
+                        .addMigrations(MIGRATION_11_12)
                         .build()
                 instance
             }

@@ -18,15 +18,19 @@ import android.widget.LinearLayout
 import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.widget.SwitchCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.size
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.gridlayout.widget.GridLayout
 import androidx.lifecycle.ViewModelProvider
+import androidx.recyclerview.widget.LinearLayoutManager
+import com.google.android.material.textfield.TextInputEditText
 import com.koalasat.pokey.Pokey
 import com.koalasat.pokey.R
 import com.koalasat.pokey.database.AppDatabase
+import com.koalasat.pokey.database.SubscriptionEntity
 import com.koalasat.pokey.database.UserEntity
 import com.koalasat.pokey.databinding.FragmentHomeBinding
 import com.koalasat.pokey.models.EncryptedStorage
@@ -42,11 +46,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONException
+import java.time.Instant
 
 class HomeFragment : Fragment() {
     private var _binding: FragmentHomeBinding? = null
     private val binding get() = _binding!!
     private val viewModel: HomeViewModel by viewModels()
+    private lateinit var subscriptionAdapter: SubscriptionListAdapter
 
     @SuppressLint("SetTextI18n", "ResourceAsColor")
     override fun onCreateView(
@@ -115,20 +121,23 @@ class HomeFragment : Fragment() {
             }
         }
 
-        homeViewModel.subscription.observeForever { value ->
-            if (_binding != null) {
-                if (value.isNotEmpty()) {
-                    val text = if (value.length > 10) {
-                        value?.substring(0, 10) + "..."
-                    } else {
-                        value
-                    }
-                    binding.addSubscription.text = text
-                } else {
-                    binding.addSubscription.visibility = View.VISIBLE
-                }
+        subscriptionAdapter = SubscriptionListAdapter(
+            emptyList(),
+            onToggle = { subscription, enabled ->
+                toggleSubscription(subscription, enabled)
+            },
+            onEdit = { subscription ->
+                showSubscriptionDialog(subscription)
+            },
+            onDelete = { subscription ->
+                deleteSubscription(subscription)
             }
-        }
+        )
+
+        binding.subscriptionList.layoutManager = LinearLayoutManager(requireContext())
+        binding.subscriptionList.adapter = subscriptionAdapter
+
+        loadSubscriptions()
 
         return binding.root
     }
@@ -141,7 +150,11 @@ class HomeFragment : Fragment() {
         }
 
         binding.addSubscription.setOnClickListener {
-            showAddASubscriptionDialog()
+            if (Pokey.isEnabled.value == true) {
+                Toast.makeText(requireContext(), getString(R.string.stopPokey), Toast.LENGTH_SHORT).show()
+            } else {
+                showSubscriptionDialog(null)
+            }
         }
 
         binding.serviceStart.setOnClickListener {
@@ -223,28 +236,56 @@ class HomeFragment : Fragment() {
         }
     }
 
-    private fun showAddASubscriptionDialog() {
-        if (Pokey.isEnabled.value == true) {
-            Toast.makeText(requireContext(), getString(R.string.stopPokey), Toast.LENGTH_SHORT).show()
+    private fun showSubscriptionDialog(existingSubscription: SubscriptionEntity?) {
+        val inflater = LayoutInflater.from(requireContext())
+        val dialogView: View = inflater.inflate(R.layout.fragment_add_subscription, null)
+
+        val builder = AlertDialog.Builder(requireContext())
+        builder.setView(dialogView)
+        val dialog = builder.create()
+
+        val dialogTitle: TextView = dialogView.findViewById(R.id.dialog_title)
+        val subscriptionInput: TextInputEditText = dialogView.findViewById(R.id.subscription_input)
+        val subscriptionLabel: TextInputEditText = dialogView.findViewById(R.id.subscription_label)
+        val subscriptionEnabled: SwitchCompat = dialogView.findViewById(R.id.subscription_enabled_switch)
+        val buttonSubmitSubscription: Button = dialogView.findViewById(R.id.submitSubscription)
+        val buttonDeleteSubscription: Button = dialogView.findViewById(R.id.deleteSubscription)
+        val buttonCancel: Button = dialogView.findViewById(R.id.cancelSubscription)
+        val helpButton: ImageButton = dialogView.findViewById(R.id.help_button)
+
+        val isEditing = existingSubscription != null
+
+        if (isEditing) {
+            dialogTitle.text = getString(R.string.edit_subscription)
+            subscriptionInput.setText(existingSubscription!!.value)
+            subscriptionInput.isEnabled = false
+            subscriptionLabel.setText(existingSubscription.label ?: "")
+            subscriptionEnabled.isChecked = existingSubscription.enabled == 1
+            buttonDeleteSubscription.visibility = View.VISIBLE
+            buttonSubmitSubscription.text = getString(R.string.save)
         } else {
-            val inflater = LayoutInflater.from(requireContext())
-            val dialogView: View = inflater.inflate(R.layout.fragment_add_subscription, null)
+            dialogTitle.text = getString(R.string.add_subscription)
+            buttonDeleteSubscription.visibility = View.GONE
+            buttonSubmitSubscription.text = getString(R.string.add)
+        }
 
-            val builder = AlertDialog.Builder(requireContext())
-            builder.setView(dialogView)
-            val dialog = builder.create()
+        helpButton.setOnClickListener {
+            Toast.makeText(requireContext(), getString(R.string.subscription_hint), Toast.LENGTH_LONG).show()
+        }
 
-            val subscriptionInput: EditText = dialogView.findViewById(R.id.subscription_input)
-            val buttonSubmitSubscription: Button = dialogView.findViewById(R.id.submitSubscription)
-            val buttonDeleteSubscription: Button = dialogView.findViewById(R.id.deleteSubscription)
-            val helpButton: ImageButton = dialogView.findViewById(R.id.help_button)
+        buttonCancel.setOnClickListener {
+            dialog.dismiss()
+        }
 
-            helpButton.setOnClickListener {
-                Toast.makeText(requireContext(), getString(R.string.subscription_hint), Toast.LENGTH_LONG).show()
-            }
+        buttonSubmitSubscription.setOnClickListener {
+            val input = subscriptionInput.text.toString().trim()
+            val label = subscriptionLabel.text.toString().trim()
+            val enabled = subscriptionEnabled.isChecked
 
-            buttonSubmitSubscription.setOnClickListener {
-                val input = subscriptionInput.text.toString()
+            if (isEditing) {
+                updateSubscription(existingSubscription!!, label, enabled)
+                dialog.dismiss()
+            } else {
                 val (type, result) = when {
                     input.startsWith("npub", ignoreCase = true) -> NostrClient.parseBech32(input)
                     input.startsWith("nevent", ignoreCase = true) -> NostrClient.parseBech32(input)
@@ -253,20 +294,73 @@ class HomeFragment : Fragment() {
                 }
 
                 if (type != null && result != null) {
-                    subscriptionInput.error = null
-                    dialog.hide()
-                    createSubscription(input)
+                    createSubscription(input, type, label, enabled)
+                    dialog.dismiss()
                 } else {
                     subscriptionInput.error = getString(R.string.invalid_input)
                 }
             }
-            buttonDeleteSubscription.setOnClickListener {
-                EncryptedStorage.updateInboxSubscription("")
-                binding.addSubscription.text = getString(R.string.create_subscription)
-                dialog.hide()
-            }
+        }
 
-            dialog.show()
+        buttonDeleteSubscription.setOnClickListener {
+            if (existingSubscription != null) {
+                deleteSubscription(existingSubscription)
+            }
+            dialog.dismiss()
+        }
+
+        dialog.show()
+    }
+
+    private fun loadSubscriptions() {
+        CoroutineScope(Dispatchers.IO).launch {
+            val dao = AppDatabase.getDatabase(requireContext(), "common").applicationDao()
+            val subscriptions = dao.getSubscriptions()
+            withContext(Dispatchers.Main) {
+                if (_binding != null) {
+                    subscriptionAdapter.updateData(subscriptions)
+                    if (subscriptions.isEmpty()) {
+                        binding.noSubscriptionsText.visibility = View.VISIBLE
+                        binding.subscriptionList.visibility = View.GONE
+                    } else {
+                        binding.noSubscriptionsText.visibility = View.GONE
+                        binding.subscriptionList.visibility = View.VISIBLE
+                    }
+                }
+            }
+        }
+    }
+
+    private fun toggleSubscription(subscription: SubscriptionEntity, enabled: Boolean) {
+        CoroutineScope(Dispatchers.IO).launch {
+            val dao = AppDatabase.getDatabase(requireContext(), "common").applicationDao()
+            dao.updateSubscriptionEnabled(subscription.id, if (enabled) 1 else 0)
+        }
+    }
+
+    private fun updateSubscription(subscription: SubscriptionEntity, label: String, enabled: Boolean) {
+        CoroutineScope(Dispatchers.IO).launch {
+            val dao = AppDatabase.getDatabase(requireContext(), "common").applicationDao()
+            val updated = subscription.copy(
+                label = label.ifEmpty { null },
+                enabled = if (enabled) 1 else 0
+            )
+            dao.updateSubscription(updated)
+            withContext(Dispatchers.Main) {
+                Toast.makeText(requireContext(), getString(R.string.subscription_updated), Toast.LENGTH_SHORT).show()
+                loadSubscriptions()
+            }
+        }
+    }
+
+    private fun deleteSubscription(subscription: SubscriptionEntity) {
+        CoroutineScope(Dispatchers.IO).launch {
+            val dao = AppDatabase.getDatabase(requireContext(), "common").applicationDao()
+            dao.deleteSubscriptionById(subscription.id)
+            withContext(Dispatchers.Main) {
+                Toast.makeText(requireContext(), getString(R.string.subscription_deleted), Toast.LENGTH_SHORT).show()
+                loadSubscriptions()
+            }
         }
     }
 
@@ -306,11 +400,33 @@ class HomeFragment : Fragment() {
         }
     }
 
-    private fun createSubscription(value: String) {
-        if (value.isNotEmpty() != true) return
+    private fun createSubscription(value: String, type: String, label: String, enabled: Boolean) {
+        if (value.isEmpty()) return
 
         CoroutineScope(Dispatchers.IO).launch {
-            EncryptedStorage.updateInboxSubscription(value)
+            val dao = AppDatabase.getDatabase(requireContext(), "common").applicationDao()
+
+            val existing = dao.getSubscriptionByValue(value)
+            if (existing != null) {
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(requireContext(), getString(R.string.subscription_exists), Toast.LENGTH_SHORT).show()
+                }
+                return@launch
+            }
+
+            val subscription = SubscriptionEntity(
+                id = 0,
+                value = value,
+                type = type,
+                label = label.ifEmpty { null },
+                enabled = if (enabled) 1 else 0,
+                createdAt = Instant.now().toEpochMilli() / 1000
+            )
+            dao.insertSubscription(subscription)
+            withContext(Dispatchers.Main) {
+                Toast.makeText(requireContext(), getString(R.string.subscription_added), Toast.LENGTH_SHORT).show()
+                loadSubscriptions()
+            }
         }
     }
 

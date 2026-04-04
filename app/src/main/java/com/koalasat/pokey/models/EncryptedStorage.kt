@@ -13,11 +13,13 @@ object PrefKeys {
     const val INBOX_PUBKEY = "inbox_pubkey"
     const val MUTE_PUBKEY = "mute_pubkey"
     const val INBOX_SUBSCRIPTION = "inbox_subscription"
+    const val USE_TOR = "use_tor"
 }
 
 object DefaultKeys {
     const val BROADCAST = true
     const val MAX_PUBKEYS = 10
+    const val USE_TOR = false
 }
 
 object EncryptedStorage {
@@ -40,6 +42,9 @@ object EncryptedStorage {
     private val _maxPubKeys = MutableLiveData<Int>().apply { DefaultKeys.MAX_PUBKEYS }
     val maxPubKeys: LiveData<Int> get() = _maxPubKeys
 
+    private val _useTor = MutableLiveData<Boolean>().apply { DefaultKeys.USE_TOR }
+    val useTor: LiveData<Boolean> get() = _useTor
+
     fun init(context: Context) {
         val masterKey: MasterKey =
             MasterKey.Builder(context, MasterKey.DEFAULT_MASTER_KEY_ALIAS)
@@ -59,6 +64,7 @@ object EncryptedStorage {
         _inboxPubKey.postValue(sharedPreferences.getString(PrefKeys.INBOX_PUBKEY, ""))
         _mutePubKey.postValue(sharedPreferences.getString(PrefKeys.MUTE_PUBKEY, ""))
         _inboxSubscription.postValue(sharedPreferences.getString(PrefKeys.INBOX_SUBSCRIPTION, ""))
+        _useTor.postValue(sharedPreferences.getBoolean(PrefKeys.USE_TOR, DefaultKeys.USE_TOR))
     }
 
     fun updateBroadcast(newValue: Boolean) {
@@ -84,5 +90,10 @@ object EncryptedStorage {
     fun updateInboxSubscription(value: String) {
         sharedPreferences.edit().putString(PrefKeys.INBOX_SUBSCRIPTION, value).apply()
         _inboxSubscription.postValue(value)
+    }
+
+    fun updateUseTor(newValue: Boolean) {
+        sharedPreferences.edit().putBoolean(PrefKeys.USE_TOR, newValue).apply()
+        _useTor.postValue(newValue)
     }
 }

@@ -35,6 +35,7 @@ import com.vitorpamplona.quartz.events.MuteListEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
+import com.koalasat.pokey.utils.TorProxyManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -113,13 +114,14 @@ object NostrClient {
             db.applicationDao().insertRelay(entity)
 
             val relay = RelayPool.getRelay(url)
+            val useTor = EncryptedStorage.useTor.value == true
             if (Pokey.isEnabled.value == true && relay == null) {
                 RelayPool.addRelay(
                     Relay(
                         entity.url,
                         read = entity.read == 1,
                         write = entity.write == 1,
-                        forceProxy = false,
+                        forceProxy = useTor,
                         activeTypes = COMMON_FEED_TYPES,
                     ),
                 )
@@ -167,9 +169,10 @@ object NostrClient {
             )
         }
 
-        var subscription = EncryptedStorage.inboxSubscription.value
+        val subscriptions = db.applicationDao().getEnabledSubscriptions()
 
-        if (subscription?.isNotEmpty() == true) {
+        subscriptions.forEachIndexed { index, subscriptionEntity ->
+            val subscription = subscriptionEntity.value
             val (type, result) = when {
                 subscription.startsWith("npub", ignoreCase = true) -> parseBech32(subscription)
                 subscription.startsWith("nevent", ignoreCase = true) -> parseBech32(subscription)
@@ -184,12 +187,52 @@ object NostrClient {
                     else -> null
                 }
 
-                var authors = when (type) {
+                val subAuthors = when (type) {
                     "npub" -> listOf(result)
                     else -> null
                 }
 
-                if (tags != null || authors != null) {
+                if (tags != null || subAuthors != null) {
+                    Client.sendFilter(
+                        "$subscriptionSubscriptionId$index",
+                        listOf(
+                            TypedFilter(
+                                types = COMMON_FEED_TYPES,
+                                filter = SincePerRelayFilter(
+                                    kinds = listOf(1),
+                                    authors = subAuthors,
+                                    tags = tags,
+                                    since = RelayPool.getAll().associate { it.url to EOSETime(latestNotification) },
+                                ),
+                            ),
+                        ),
+                    )
+                }
+            }
+        }
+
+        val legacySubscription = EncryptedStorage.inboxSubscription.value
+        if (legacySubscription?.isNotEmpty() == true && subscriptions.isEmpty()) {
+            val (type, result) = when {
+                legacySubscription.startsWith("npub", ignoreCase = true) -> parseBech32(legacySubscription)
+                legacySubscription.startsWith("nevent", ignoreCase = true) -> parseBech32(legacySubscription)
+                legacySubscription.startsWith("#") -> Pair("hashtag", legacySubscription.replace("#", ""))
+                else -> Pair(null, null)
+            }
+
+            if (type != null && result != null) {
+                val tags = when (type) {
+                    "nevent" -> mapOf(Pair("e", listOf(result)))
+                    "hashtag" -> mapOf(Pair("t", listOf(result)))
+                    else -> null
+                }
+
+                val subAuthors = when (type) {
+                    "npub" -> listOf(result)
+                    else -> null
+                }
+
+                if (tags != null || subAuthors != null) {
                     Client.sendFilter(
                         subscriptionSubscriptionId,
                         listOf(
@@ -197,7 +240,7 @@ object NostrClient {
                                 types = COMMON_FEED_TYPES,
                                 filter = SincePerRelayFilter(
                                     kinds = listOf(1),
-                                    authors = authors,
+                                    authors = subAuthors,
                                     tags = tags,
                                     since = RelayPool.getAll().associate { it.url to EOSETime(latestNotification) },
                                 ),
@@ -411,6 +454,8 @@ object NostrClient {
             relays = defaultRelayUrls.map { RelayEntity(id = 0, url = it, kind = 0, createdAt = 0, read = 1, write = 1, hexPub = "") }
         }
 
+        val useTor = EncryptedStorage.useTor.value == true
+
         relays.forEach {
             Client.sendFilterOnlyIfDisconnected()
             if (RelayPool.getRelays(it.url).isEmpty()) {
@@ -419,7 +464,7 @@ object NostrClient {
                         it.url,
                         read = true,
                         write = false,
-                        forceProxy = false,
+                        forceProxy = useTor,
                         activeTypes = COMMON_FEED_TYPES,
                     ),
                 )
@@ -636,14 +681,33 @@ object NostrClient {
         )
     }
 
-    fun noteIsSubscription(event: Event): Boolean {
-        var subscription = EncryptedStorage.inboxSubscription.value
+    fun noteIsSubscription(event: Event, context: Context): Boolean {
+        val db = AppDatabase.getDatabase(context, "common")
+        val subscriptions = db.applicationDao().getEnabledSubscriptions()
 
-        if (subscription?.isNotEmpty() == true) {
+        for (subscriptionEntity in subscriptions) {
+            val subscription = subscriptionEntity.value
             val (type, result) = when {
                 subscription.startsWith("npub", ignoreCase = true) -> parseBech32(subscription)
                 subscription.startsWith("nevent", ignoreCase = true) -> parseBech32(subscription)
                 subscription.startsWith("#") -> Pair("hashtag", subscription.replace("#", ""))
+                else -> Pair(null, null)
+            }
+            val matched = when (type) {
+                "npub" -> event.pubKey == result
+                "nevent" -> event.taggedEvents().contains(result)
+                "hashtag" -> event.isTaggedHash(result.toString())
+                else -> false
+            }
+            if (matched) return true
+        }
+
+        val legacySubscription = EncryptedStorage.inboxSubscription.value
+        if (legacySubscription?.isNotEmpty() == true && subscriptions.isEmpty()) {
+            val (type, result) = when {
+                legacySubscription.startsWith("npub", ignoreCase = true) -> parseBech32(legacySubscription)
+                legacySubscription.startsWith("nevent", ignoreCase = true) -> parseBech32(legacySubscription)
+                legacySubscription.startsWith("#") -> Pair("hashtag", legacySubscription.replace("#", ""))
                 else -> Pair(null, null)
             }
             return when (type) {
@@ -652,9 +716,9 @@ object NostrClient {
                 "hashtag" -> event.isTaggedHash(result.toString())
                 else -> false
             }
-        } else {
-            return false
         }
+
+        return false
     }
 
     @SuppressLint("MissingPermission")

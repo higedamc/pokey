@@ -6,6 +6,7 @@ import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
@@ -14,6 +15,7 @@ import com.koalasat.pokey.R
 import com.koalasat.pokey.database.AppDatabase
 import com.koalasat.pokey.databinding.FragmentConfigurationBinding
 import com.koalasat.pokey.models.EncryptedStorage
+import com.koalasat.pokey.utils.TorProxyManager
 import com.koalasat.pokey.utils.isDarkThemeEnabled
 import com.vitorpamplona.quartz.encoders.Hex
 import com.vitorpamplona.quartz.encoders.toNpub
@@ -45,6 +47,35 @@ class ConfigurationFragment : Fragment() {
             viewModel.updateBroadcast(isChecked)
         }
         viewModel.broadcast.value.apply { EncryptedStorage.broadcast.value }
+
+        viewModel.useTor.observe(viewLifecycleOwner) { value ->
+            binding.useTor.isChecked = value
+            updateTorStatus(value)
+        }
+        binding.useTor.setOnCheckedChangeListener { _, isChecked ->
+            if (isChecked) {
+                if (!TorProxyManager.isOrbotInstalled(requireContext())) {
+                    binding.useTor.isChecked = false
+                    Toast.makeText(requireContext(), getString(R.string.orbot_not_installed), Toast.LENGTH_SHORT).show()
+                    TorProxyManager.openOrbotPlayStore(requireContext())
+                    return@setOnCheckedChangeListener
+                }
+                CoroutineScope(Dispatchers.IO).launch {
+                    val torAvailable = TorProxyManager.isTorAvailable()
+                    withContext(Dispatchers.Main) {
+                        if (!torAvailable) {
+                            binding.useTor.isChecked = false
+                            Toast.makeText(requireContext(), getString(R.string.orbot_not_running), Toast.LENGTH_SHORT).show()
+                            TorProxyManager.requestOrbotStart(requireContext())
+                        } else {
+                            viewModel.updateUseTor(true)
+                        }
+                    }
+                }
+            } else {
+                viewModel.updateUseTor(false)
+            }
+        }
 
         val textColor = if (isDarkThemeEnabled(requireContext())) R.color.white else R.color.black
         binding.maxPubKeysText.setTextColor(ContextCompat.getColorStateList(requireContext(), textColor))
@@ -150,5 +181,17 @@ class ConfigurationFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
+    }
+
+    private fun updateTorStatus(enabled: Boolean) {
+        if (_binding == null) return
+        if (enabled) {
+            binding.torStatus.text = getString(R.string.tor_enabled)
+            binding.torStatus.setTextColor(ContextCompat.getColor(requireContext(), R.color.green))
+        } else {
+            binding.torStatus.text = getString(R.string.tor_disabled)
+            val textColor = if (isDarkThemeEnabled(requireContext())) R.color.white else R.color.black
+            binding.torStatus.setTextColor(ContextCompat.getColor(requireContext(), textColor))
+        }
     }
 }

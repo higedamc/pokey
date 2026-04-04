@@ -24,6 +24,9 @@ class ConfigurationViewModel(application: Application) : AndroidViewModel(applic
     private val _maxPubKeys = MutableLiveData<Int>().apply { value = EncryptedStorage.maxPubKeys.value }
     val maxPubKeys: LiveData<Int> = _maxPubKeys
 
+    private val _useTor = MutableLiveData<Boolean>().apply { value = EncryptedStorage.useTor.value }
+    val useTor: LiveData<Boolean> = _useTor
+
     private val _newReplies = MutableLiveData<Boolean>()
     val newReplies: LiveData<Boolean> = _newReplies
 
@@ -50,6 +53,10 @@ class ConfigurationViewModel(application: Application) : AndroidViewModel(applic
             _broadcast.postValue(value)
         }
 
+        EncryptedStorage.useTor.observeForever { value ->
+            _useTor.postValue(value)
+        }
+
         _userHexPubKey.observeForever {
             refreshData()
         }
@@ -63,6 +70,11 @@ class ConfigurationViewModel(application: Application) : AndroidViewModel(applic
     fun updateMaxPubKeys(value: Int) {
         _maxPubKeys.postValue(value)
         EncryptedStorage.updateMaxPubKeys(value)
+    }
+
+    fun updateUseTor(value: Boolean) {
+        _useTor.postValue(value)
+        EncryptedStorage.updateUseTor(value)
     }
 
     fun updateNotifyReplies(value: Boolean) {

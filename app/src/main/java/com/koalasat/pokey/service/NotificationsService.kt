@@ -110,7 +110,7 @@ class NotificationsService : Service() {
                     Log.d("Pokey", "Relay Event: ${relay.url} - $subscriptionId - ${event.toJson()}")
                     val userNotePubKey: String? = hexPubKeysList.find { it == event.pubKey }
                     val userMention: String? = event.taggedUsers().find { it in hexPubKeysList }
-                    val anySubscription = NostrClient.noteIsSubscription(event)
+                    val anySubscription = NostrClient.noteIsSubscription(event, this@NotificationsService)
 
                     if (userNotePubKey !== null) {
                         if (intArrayOf(10002, 10050).contains(event.kind)) {

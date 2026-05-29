@@ -38,6 +38,7 @@ import com.koalasat.pokey.models.ExternalSigner
 import com.koalasat.pokey.models.NostrClient
 import com.koalasat.pokey.utils.images.CircleTransform
 import com.koalasat.pokey.utils.isDarkThemeEnabled
+import com.koalasat.pokey.utils.isValidHexPubKey
 import com.squareup.picasso.Picasso
 import com.vitorpamplona.quartz.encoders.Hex
 import com.vitorpamplona.quartz.encoders.toNpub
@@ -94,7 +95,11 @@ class HomeFragment : Fragment() {
                         text = if (user.name?.isNotEmpty() == true) {
                             user.name
                         } else {
-                            Hex.decode(user.hexPub).toNpub().substring(0, 10) + "..."
+                            runCatching {
+                                Hex.decode(user.hexPub).toNpub().substring(0, 10) + "..."
+                            }.getOrElse {
+                                getString(R.string.invalid_npub)
+                            }
                         }
                         layoutParams = LinearLayout.LayoutParams(
                             LinearLayout.LayoutParams.MATCH_PARENT,
@@ -377,7 +382,10 @@ class HomeFragment : Fragment() {
     }
 
     private fun createUser(hexPukKey: String?, signer: Int) {
-        if (hexPukKey?.isNotEmpty() != true) return
+        if (!isValidHexPubKey(hexPukKey)) {
+            Toast.makeText(requireContext(), getString(R.string.invalid_npub), Toast.LENGTH_SHORT).show()
+            return
+        }
 
         CoroutineScope(Dispatchers.IO).launch {
             val dao = context?.let { AppDatabase.getDatabase(it, "common").applicationDao() }

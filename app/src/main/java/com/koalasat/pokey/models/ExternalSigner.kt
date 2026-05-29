@@ -9,6 +9,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.koalasat.pokey.Pokey
 import com.koalasat.pokey.R
+import com.koalasat.pokey.utils.isValidHexPubKey
 import com.vitorpamplona.quartz.encoders.toHexKey
 import com.vitorpamplona.quartz.events.Event
 import com.vitorpamplona.quartz.signers.ExternalSignerLauncher
@@ -53,12 +54,22 @@ object ExternalSigner {
         ) { result ->
             val split = result.split("-")
             val pubkey = split.first().toString()
-            if (pubkey.isNotEmpty()) {
-                val hexPub = NostrClient.parseNpub(pubkey).toString()
+            val hexPub = normalizePubKey(pubkey)
+            if (hexPub != null) {
                 startLauncher(hexPub)
                 onReady(hexPub)
             }
         }
+    }
+
+    private fun normalizePubKey(value: String): String? {
+        if (value.isEmpty()) return null
+
+        val parsedNpub = NostrClient.parseNpub(value)
+        if (parsedNpub?.isNotEmpty() == true) return parsedNpub
+
+        val lowered = value.lowercase()
+        return if (isValidHexPubKey(lowered)) lowered else null
     }
 
     fun auth(hexKey: String, relayUrl: String, challenge: String, onReady: (Event) -> Unit) {

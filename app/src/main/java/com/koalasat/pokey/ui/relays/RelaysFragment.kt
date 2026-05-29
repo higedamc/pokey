@@ -14,6 +14,7 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.RadioButton
 import android.widget.RadioGroup
+import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
@@ -26,6 +27,7 @@ import com.koalasat.pokey.database.RelayEntity
 import com.koalasat.pokey.databinding.FragmentRelaysBinding
 import com.koalasat.pokey.models.EncryptedStorage
 import com.koalasat.pokey.models.NostrClient
+import com.koalasat.pokey.utils.isValidHexPubKey
 import com.vitorpamplona.quartz.encoders.Hex
 import com.vitorpamplona.quartz.encoders.toNpub
 import kotlinx.coroutines.CoroutineScope
@@ -69,23 +71,29 @@ class RelaysFragment : Fragment() {
         }
 
         EncryptedStorage.inboxPubKey.observeForever {
+            val ctx = context ?: return@observeForever
             CoroutineScope(Dispatchers.IO).launch {
-                val dao = AppDatabase.getDatabase(requireContext(), "common").applicationDao()
+                val dao = AppDatabase.getDatabase(ctx, "common").applicationDao()
                 val user = dao.getUser(EncryptedStorage.inboxPubKey.value.toString())
                 if (user != null) {
                     val handler = Handler(Looper.getMainLooper())
                     handler.post {
+                        val safeBinding = _binding ?: return@post
                         if (user.signer != 1) {
-                            binding.publishPublicRelay.visibility = View.GONE
-                            binding.publishPrivateRelay.visibility = View.GONE
+                            safeBinding.publishPublicRelay.visibility = View.GONE
+                            safeBinding.publishPrivateRelay.visibility = View.GONE
                         } else {
-                            binding.publishPublicRelay.visibility = View.VISIBLE
-                            binding.publishPrivateRelay.visibility = View.VISIBLE
+                            safeBinding.publishPublicRelay.visibility = View.VISIBLE
+                            safeBinding.publishPrivateRelay.visibility = View.VISIBLE
                         }
-                        binding.activeAccount.text = if (user.name?.isNotEmpty() == true) {
+                        safeBinding.activeAccount.text = if (user.name?.isNotEmpty() == true) {
                             user.name
                         } else {
-                            Hex.decode(user.hexPub).toNpub().substring(0, 10) + "..."
+                            runCatching {
+                                Hex.decode(user.hexPub).toNpub().substring(0, 10) + "..."
+                            }.getOrElse {
+                                safeBinding.activeAccount.context.getString(R.string.invalid_npub)
+                            }
                         }
                     }
                 }
@@ -271,8 +279,11 @@ class RelaysFragment : Fragment() {
                     text = if (user.name?.isNotEmpty() == true) {
                         user.name
                     } else {
-                        var nPub = Hex.decode(user.hexPub).toNpub()
-                        nPub.substring(0, 25) + "..."
+                        runCatching {
+                            Hex.decode(user.hexPub).toNpub().substring(0, 25) + "..."
+                        }.getOrElse {
+                            getString(R.string.invalid_npub)
+                        }
                     }
                     id = user.hexPub.hashCode()
                     tag = user.hexPub
@@ -285,12 +296,21 @@ class RelaysFragment : Fragment() {
         }
 
         buttonSubmitAccount.setOnClickListener {
-            dialog.hide()
             val checkedId = accountListView.checkedRadioButtonId
-            val hexPub = accountListView.findViewById<RadioButton>(checkedId).tag
+            val hexPub = if (checkedId != View.NO_ID) {
+                accountListView.findViewById<RadioButton>(checkedId)?.tag as? String
+            } else {
+                null
+            }
 
+            if (!isValidHexPubKey(hexPub)) {
+                Toast.makeText(requireContext(), getString(R.string.invalid_npub), Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            dialog.hide()
             NostrClient.stop()
-            EncryptedStorage.updateInboxPubKey(hexPub.toString())
+            EncryptedStorage.updateInboxPubKey(hexPub)
             CoroutineScope(Dispatchers.IO).launch {
                 NostrClient.start(requireContext())
                 reconnectRelays(publicRelaysKind)

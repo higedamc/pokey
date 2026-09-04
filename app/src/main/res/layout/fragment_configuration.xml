@@ -106,6 +106,24 @@
                     android:text="@string/active_replies" />
 
                 <androidx.appcompat.widget.SwitchCompat
+                    android:id="@+id/newRepliesFollowsOnly"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:minHeight="48dp"
+                    android:paddingStart="24dp"
+                    android:text="@string/active_replies_follows_only" />
+
+                <TextView
+                    android:id="@+id/newRepliesFollowsOnlyStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:paddingStart="24dp"
+                    android:paddingEnd="4dp"
+                    android:text="@string/replies_follows_only_fallback"
+                    android:textSize="12sp"
+                    android:visibility="gone" />
+
+                <androidx.appcompat.widget.SwitchCompat
                     android:id="@+id/newMentions"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"

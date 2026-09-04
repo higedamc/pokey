@@ -146,6 +146,25 @@ val MIGRATION_11_12 =
         }
     }
 
+val MIGRATION_12_13 =
+    object : Migration(12, 13) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE user ADD COLUMN notifyRepliesFollowsOnly INTEGER NOT NULL DEFAULT 0;")
+            db.execSQL("ALTER TABLE user ADD COLUMN followsSyncedAt INTEGER;")
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `follow` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `hexPub` TEXT NOT NULL,
+                    `followedPub` TEXT NOT NULL,
+                    `createdAt` INTEGER NOT NULL DEFAULT 0
+                )
+                """.trimIndent(),
+            )
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `follow_unique_hexPub_followedPub` ON `follow` (`hexPub`, `followedPub`)")
+        }
+    }
+
 @Database(
     entities = [
         NotificationEntity::class,
@@ -153,8 +172,9 @@ val MIGRATION_11_12 =
         MuteEntity::class,
         UserEntity::class,
         SubscriptionEntity::class,
+        FollowEntity::class,
     ],
-    version = 12,
+    version = 13,
 )
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
@@ -179,6 +199,7 @@ abstract class AppDatabase : RoomDatabase() {
                         .addMigrations(MIGRATION_9_10)
                         .addMigrations(MIGRATION_10_11)
                         .addMigrations(MIGRATION_11_12)
+                        .addMigrations(MIGRATION_12_13)
                         .build()
                 instance
             }

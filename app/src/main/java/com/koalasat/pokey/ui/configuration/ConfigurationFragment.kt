@@ -28,6 +28,8 @@ class ConfigurationFragment : Fragment() {
 
     private var _binding: FragmentConfigurationBinding? = null
     private val binding get() = _binding!!
+    private var followsOnlyEnabled = false
+    private var followsSynced = true
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -93,9 +95,25 @@ class ConfigurationFragment : Fragment() {
 
         viewModel.newReplies.observe(viewLifecycleOwner) { value ->
             binding.newReplies.isChecked = value
+            binding.newRepliesFollowsOnly.isEnabled = value
         }
         binding.newReplies.setOnCheckedChangeListener { _, isChecked ->
             viewModel.updateNotifyReplies(isChecked)
+            binding.newRepliesFollowsOnly.isEnabled = isChecked
+        }
+
+        viewModel.newRepliesFollowsOnly.observe(viewLifecycleOwner) { value ->
+            binding.newRepliesFollowsOnly.isChecked = value
+            followsOnlyEnabled = value
+            updateFollowsOnlyStatus()
+        }
+        binding.newRepliesFollowsOnly.setOnCheckedChangeListener { _, isChecked ->
+            viewModel.updateNotifyRepliesFollowsOnly(isChecked)
+        }
+
+        viewModel.followsSynced.observe(viewLifecycleOwner) { value ->
+            followsSynced = value
+            updateFollowsOnlyStatus()
         }
 
         viewModel.newZaps.observe(viewLifecycleOwner) { value ->
@@ -181,6 +199,11 @@ class ConfigurationFragment : Fragment() {
     override fun onDestroyView() {
         super.onDestroyView()
         _binding = null
+    }
+
+    private fun updateFollowsOnlyStatus() {
+        if (_binding == null) return
+        binding.newRepliesFollowsOnlyStatus.visibility = if (followsOnlyEnabled && !followsSynced) View.VISIBLE else View.GONE
     }
 
     private fun updateTorStatus(enabled: Boolean) {

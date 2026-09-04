@@ -30,6 +30,12 @@ class ConfigurationViewModel(application: Application) : AndroidViewModel(applic
     private val _newReplies = MutableLiveData<Boolean>()
     val newReplies: LiveData<Boolean> = _newReplies
 
+    private val _newRepliesFollowsOnly = MutableLiveData<Boolean>()
+    val newRepliesFollowsOnly: LiveData<Boolean> = _newRepliesFollowsOnly
+
+    private val _followsSynced = MutableLiveData<Boolean>()
+    val followsSynced: LiveData<Boolean> = _followsSynced
+
     private val _newZaps = MutableLiveData<Boolean>()
     val newZaps: LiveData<Boolean> = _newZaps
 
@@ -84,6 +90,18 @@ class ConfigurationViewModel(application: Application) : AndroidViewModel(applic
             val activeUser = dao.getUser(userHexPubKey.value.toString())
             if (activeUser != null) {
                 activeUser.notifyReplies = if (value) 1 else 0
+                dao.updateUser(activeUser)
+            }
+        }
+    }
+
+    fun updateNotifyRepliesFollowsOnly(value: Boolean) {
+        _newRepliesFollowsOnly.postValue(value)
+        CoroutineScope(Dispatchers.IO).launch {
+            val dao = AppDatabase.getDatabase(appContext, "common").applicationDao()
+            val activeUser = dao.getUser(userHexPubKey.value.toString())
+            if (activeUser != null) {
+                activeUser.notifyRepliesFollowsOnly = if (value) 1 else 0
                 dao.updateUser(activeUser)
             }
         }
@@ -173,6 +191,8 @@ class ConfigurationViewModel(application: Application) : AndroidViewModel(applic
                 val mainHandler = Handler(Looper.getMainLooper())
                 mainHandler.post {
                     _newReplies.postValue(activeUser.notifyReplies == 1)
+                    _newRepliesFollowsOnly.postValue(activeUser.notifyRepliesFollowsOnly == 1)
+                    _followsSynced.postValue(activeUser.followsSyncedAt != null)
                     _newZaps.postValue(activeUser.notifyZaps == 1)
                     _newQuotes.postValue(activeUser.notifyQuotes == 1)
                     _newReactions.postValue(activeUser.notifyReactions == 1)

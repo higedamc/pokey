@@ -29,4 +29,6 @@ data class UserEntity(
     var notifyReactions: Int = 1,
     var notifyMentions: Int = 1,
     var notifyReposts: Int = 1,
+    var notifyRepliesFollowsOnly: Int = 0,
+    var followsSyncedAt: Long? = null,
 )

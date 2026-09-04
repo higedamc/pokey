@@ -15,6 +15,7 @@ import com.koalasat.pokey.MainActivity
 import com.koalasat.pokey.Pokey
 import com.koalasat.pokey.R
 import com.koalasat.pokey.database.AppDatabase
+import com.koalasat.pokey.database.FollowEntity
 import com.koalasat.pokey.database.MuteEntity
 import com.koalasat.pokey.database.NotificationEntity
 import com.koalasat.pokey.database.RelayEntity
@@ -30,6 +31,7 @@ import com.vitorpamplona.ammolite.relays.filters.SincePerRelayFilter
 import com.vitorpamplona.quartz.encoders.Nip19Bech32
 import com.vitorpamplona.quartz.encoders.Nip19Bech32.uriToRoute
 import com.vitorpamplona.quartz.encoders.toHexKey
+import com.vitorpamplona.quartz.events.ContactListEvent
 import com.vitorpamplona.quartz.events.Event
 import com.vitorpamplona.quartz.events.MuteListEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
@@ -437,7 +439,7 @@ object NostrClient {
                     TypedFilter(
                         types = COMMON_FEED_TYPES,
                         filter = SincePerRelayFilter(
-                            kinds = listOf(10000, 10002, 10050),
+                            kinds = listOf(10000, 10002, 10050, 3),
                             authors = authors,
                         ),
                     ),
@@ -577,6 +579,30 @@ object NostrClient {
                 }
             } else {
                 Pokey.updateLoadingMuteList(false)
+            }
+        }
+    }
+
+    fun manageFollowList(context: Context, event: ContactListEvent) {
+        if (!event.hasVerifiedSignature()) return
+
+        CoroutineScope(Dispatchers.IO).launch {
+            val db = AppDatabase.getDatabase(context, "common")
+            val user = db.applicationDao().getUser(event.pubKey) ?: return@launch
+            val lastSyncedAt = user.followsSyncedAt ?: 0L
+
+            if (event.createdAt > lastSyncedAt) {
+                db.applicationDao().deleteFollowList(event.pubKey)
+
+                val followEntities = event.verifiedFollowKeySet().map {
+                    FollowEntity(id = 0, hexPub = event.pubKey, followedPub = it, createdAt = event.createdAt)
+                }
+                db.applicationDao().insertFollows(followEntities)
+
+                user.followsSyncedAt = event.createdAt
+                db.applicationDao().updateUser(user)
+
+                Log.d("Pokey", "Follow list : ${followEntities.size} follows")
             }
         }
     }

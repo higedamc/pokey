@@ -131,4 +131,13 @@ interface ApplicationDao {
 
     @Query("UPDATE subscription SET enabled = :enabled WHERE id = :id")
     fun updateSubscriptionEnabled(id: Long, enabled: Int): Int
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertFollows(followEntities: List<FollowEntity>)
+
+    @Query("DELETE FROM follow WHERE hexPub = :hexPub")
+    fun deleteFollowList(hexPub: String): Int
+
+    @Query("SELECT EXISTS (SELECT 1 FROM follow WHERE hexPub = :hexPub AND followedPub = :followedPub)")
+    fun existsFollow(hexPub: String, followedPub: String): Int
 }

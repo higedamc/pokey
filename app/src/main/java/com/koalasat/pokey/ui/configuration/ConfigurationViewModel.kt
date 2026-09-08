@@ -188,12 +188,12 @@ class ConfigurationViewModel(application: Application) : AndroidViewModel(applic
             val dao = AppDatabase.getDatabase(appContext, "common").applicationDao()
             val activeUser = dao.getUser(userHexPubKey.value.toString())
             if (activeUser != null) {
-                val hasFollows = dao.countFollows(activeUser.hexPub) > 0
+                val followsOnlyFilterActive = dao.isFollowsOnlyFilterActive(activeUser)
                 val mainHandler = Handler(Looper.getMainLooper())
                 mainHandler.post {
                     _newReplies.postValue(activeUser.notifyReplies == 1)
                     _newRepliesFollowsOnly.postValue(activeUser.notifyRepliesFollowsOnly == 1)
-                    _followsSynced.postValue(activeUser.followsSyncedAt != null && hasFollows)
+                    _followsSynced.postValue(followsOnlyFilterActive)
                     _newZaps.postValue(activeUser.notifyZaps == 1)
                     _newQuotes.postValue(activeUser.notifyQuotes == 1)
                     _newReactions.postValue(activeUser.notifyReactions == 1)

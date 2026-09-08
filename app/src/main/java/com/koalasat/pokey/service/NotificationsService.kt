@@ -387,7 +387,7 @@ class NotificationsService : Service() {
                                 getString(R.string.new_post)
                             } else {
                                 if (user.notifyReplies != 1) return@launch
-                                if (user.notifyRepliesFollowsOnly == 1 && user.followsSyncedAt != null) {
+                                if (db.applicationDao().isFollowsOnlyFilterActive(user)) {
                                     val isFollowed = db.applicationDao().existsFollow(user.hexPub, event.pubKey) == 1
                                     if (!isFollowed) return@launch
                                 }

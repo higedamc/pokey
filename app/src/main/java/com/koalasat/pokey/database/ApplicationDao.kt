@@ -143,4 +143,11 @@ interface ApplicationDao {
 
     @Query("SELECT COUNT(*) FROM follow WHERE hexPub = :hexPub")
     fun countFollows(hexPub: String): Int
+
+    // Single source of truth: synced-but-empty (0 follows) must not activate the filter, or every reply gets suppressed instead of notified.
+    fun isFollowsOnlyFilterActive(user: UserEntity): Boolean {
+        return user.notifyRepliesFollowsOnly == 1 &&
+            user.followsSyncedAt != null &&
+            countFollows(user.hexPub) > 0
+    }
 }

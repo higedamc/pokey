@@ -272,9 +272,11 @@ class RelaysFragment : Fragment() {
         val buttonSubmitAccount: Button = dialogView.findViewById(R.id.submit_account)
 
         val accountListView = dialogView.findViewById<RadioGroup>(R.id.accounts_list)
-        CoroutineScope(Dispatchers.IO).launch {
-            val dao = AppDatabase.getDatabase(requireContext(), "common").applicationDao()
-            for (user in dao.getUsers()) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val users = withContext(Dispatchers.IO) {
+                AppDatabase.getDatabase(requireContext(), "common").applicationDao().getUsers()
+            }
+            for (user in users) {
                 val radioButton = RadioButton(requireContext()).apply {
                     text = if (user.name?.isNotEmpty() == true) {
                         user.name

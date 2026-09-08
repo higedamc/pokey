@@ -28,6 +28,8 @@
     <string name="stop">Stop</string>
     <string name="logo">Logo</string>
     <string name="active_replies">New replies</string>
+    <string name="active_replies_follows_only">Only from people I follow</string>
+    <string name="replies_follows_only_fallback">Follow list not synced yet or empty, notifying for replies from everyone until it has follows</string>
     <string name="active_reactions">New reactions</string>
     <string name="active_private_messages">New private messages</string>
     <string name="active_zaps">New zaps</string>
@@ -84,4 +86,33 @@
     <string name="private_mute_list">Private mute list</string>
     <string name="user">User</string>
     <string name="thread">Thread</string>
+
+    <string name="battery_optimization_title">Background Running</string>
+    <string name="battery_optimization_message">Pokey needs to run in the background to deliver notifications. Please disable battery optimization for this app to ensure reliable notifications.</string>
+    <string name="later">Later</string>
+    <string name="dont_ask_again">Don\'t ask again</string>
+    <string name="battery_optimization_disabled">Battery optimization disabled</string>
+    <string name="battery_optimization_enabled">Battery optimization enabled (notifications may be delayed)</string>
+    <string name="disable_battery_optimization">Disable Battery Optimization</string>
+
+    <string name="use_tor">Use Tor (Orbot)</string>
+    <string name="tor_enabled">Connecting via Tor</string>
+    <string name="tor_disabled">Direct connection</string>
+    <string name="orbot_not_installed">Orbot is not installed</string>
+    <string name="orbot_not_running">Orbot is not running. Please start Orbot first.</string>
+    <string name="install_orbot">Install Orbot</string>
+    <string name="start_orbot">Start Orbot</string>
+    <string name="tor_connection_failed">Failed to connect via Tor</string>
+
+    <string name="subscriptions_title">Subscriptions</string>
+    <string name="add_subscription">Add Subscription</string>
+    <string name="edit_subscription">Edit Subscription</string>
+    <string name="no_subscriptions">No subscriptions yet</string>
+    <string name="subscription_added">Subscription added</string>
+    <string name="subscription_updated">Subscription updated</string>
+    <string name="subscription_deleted">Subscription deleted</string>
+    <string name="subscription_exists">This subscription already exists</string>
+    <string name="subscription_label">Label (optional)</string>
+    <string name="subscription_enabled">Enabled</string>
+    <string name="save">Save</string>
 </resources>

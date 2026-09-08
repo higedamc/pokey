@@ -104,4 +104,43 @@ interface ApplicationDao {
 
     @Query("SELECT * FROM user WHERE signer = 1")
     fun getSignerUsers(): List<UserEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun insertSubscription(subscriptionEntity: SubscriptionEntity): Long?
+
+    @Update(onConflict = OnConflictStrategy.REPLACE)
+    fun updateSubscription(subscriptionEntity: SubscriptionEntity): Int
+
+    @Delete
+    fun deleteSubscription(subscriptionEntity: SubscriptionEntity): Int
+
+    @Query("DELETE FROM subscription WHERE id = :id")
+    fun deleteSubscriptionById(id: Long): Int
+
+    @Query("SELECT * FROM subscription ORDER BY createdAt DESC")
+    fun getSubscriptions(): List<SubscriptionEntity>
+
+    @Query("SELECT * FROM subscription WHERE enabled = 1 ORDER BY createdAt DESC")
+    fun getEnabledSubscriptions(): List<SubscriptionEntity>
+
+    @Query("SELECT * FROM subscription WHERE id = :id LIMIT 1")
+    fun getSubscription(id: Long): SubscriptionEntity?
+
+    @Query("SELECT * FROM subscription WHERE value = :value LIMIT 1")
+    fun getSubscriptionByValue(value: String): SubscriptionEntity?
+
+    @Query("UPDATE subscription SET enabled = :enabled WHERE id = :id")
+    fun updateSubscriptionEnabled(id: Long, enabled: Int): Int
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertFollows(followEntities: List<FollowEntity>)
+
+    @Query("DELETE FROM follow WHERE hexPub = :hexPub")
+    fun deleteFollowList(hexPub: String): Int
+
+    @Query("SELECT EXISTS (SELECT 1 FROM follow WHERE hexPub = :hexPub AND followedPub = :followedPub)")
+    fun existsFollow(hexPub: String, followedPub: String): Int
+
+    @Query("SELECT COUNT(*) FROM follow WHERE hexPub = :hexPub")
+    fun countFollows(hexPub: String): Int
 }

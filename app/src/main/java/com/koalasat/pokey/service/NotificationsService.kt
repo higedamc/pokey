@@ -40,6 +40,7 @@ import com.vitorpamplona.quartz.encoders.decodePublicKey
 import com.vitorpamplona.quartz.encoders.toHexKey
 import com.vitorpamplona.quartz.encoders.toNote
 import com.vitorpamplona.quartz.encoders.toNpub
+import com.vitorpamplona.quartz.events.ContactListEvent
 import com.vitorpamplona.quartz.events.Event
 import com.vitorpamplona.quartz.events.EventInterface
 import com.vitorpamplona.quartz.events.MuteListEvent
@@ -110,7 +111,7 @@ class NotificationsService : Service() {
                     Log.d("Pokey", "Relay Event: ${relay.url} - $subscriptionId - ${event.toJson()}")
                     val userNotePubKey: String? = hexPubKeysList.find { it == event.pubKey }
                     val userMention: String? = event.taggedUsers().find { it in hexPubKeysList }
-                    val anySubscription = NostrClient.noteIsSubscription(event)
+                    val anySubscription = NostrClient.noteIsSubscription(event, this@NotificationsService)
 
                     if (userNotePubKey !== null) {
                         if (intArrayOf(10002, 10050).contains(event.kind)) {
@@ -118,6 +119,9 @@ class NotificationsService : Service() {
                             return
                         } else if (intArrayOf(10000).contains(event.kind)) {
                             NostrClient.manageMuteList(this@NotificationsService, event as MuteListEvent)
+                            return
+                        } else if (event.kind == 3) {
+                            NostrClient.manageFollowList(this@NotificationsService, event as ContactListEvent)
                             return
                         }
                     }
@@ -383,6 +387,10 @@ class NotificationsService : Service() {
                                 getString(R.string.new_post)
                             } else {
                                 if (user.notifyReplies != 1) return@launch
+                                if (user.notifyRepliesFollowsOnly == 1 && user.followsSyncedAt != null) {
+                                    val isFollowed = db.applicationDao().existsFollow(user.hexPub, event.pubKey) == 1
+                                    if (!isFollowed) return@launch
+                                }
                                 getString(R.string.new_reply)
                             }
                         }

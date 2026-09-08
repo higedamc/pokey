@@ -127,14 +127,54 @@ val MIGRATION_10_11 =
         }
     }
 
+val MIGRATION_11_12 =
+    object : Migration(11, 12) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `subscription` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `value` TEXT NOT NULL,
+                    `type` TEXT NOT NULL,
+                    `label` TEXT,
+                    `enabled` INTEGER NOT NULL DEFAULT 1,
+                    `createdAt` INTEGER NOT NULL
+                )
+                """.trimIndent(),
+            )
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_subscription_value` ON `subscription` (`value`)")
+        }
+    }
+
+val MIGRATION_12_13 =
+    object : Migration(12, 13) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE user ADD COLUMN notifyRepliesFollowsOnly INTEGER NOT NULL DEFAULT 0;")
+            db.execSQL("ALTER TABLE user ADD COLUMN followsSyncedAt INTEGER;")
+            db.execSQL(
+                """
+                CREATE TABLE IF NOT EXISTS `follow` (
+                    `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                    `hexPub` TEXT NOT NULL,
+                    `followedPub` TEXT NOT NULL,
+                    `createdAt` INTEGER NOT NULL DEFAULT 0
+                )
+                """.trimIndent(),
+            )
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `follow_unique_hexPub_followedPub` ON `follow` (`hexPub`, `followedPub`)")
+        }
+    }
+
 @Database(
     entities = [
         NotificationEntity::class,
         RelayEntity::class,
         MuteEntity::class,
         UserEntity::class,
+        SubscriptionEntity::class,
+        FollowEntity::class,
     ],
-    version = 11,
+    version = 13,
 )
 @TypeConverters(Converters::class)
 abstract class AppDatabase : RoomDatabase() {
@@ -158,6 +198,8 @@ abstract class AppDatabase : RoomDatabase() {
                         .addMigrations(MIGRATION_8_9)
                         .addMigrations(MIGRATION_9_10)
                         .addMigrations(MIGRATION_10_11)
+                        .addMigrations(MIGRATION_11_12)
+                        .addMigrations(MIGRATION_12_13)
                         .build()
                 instance
             }

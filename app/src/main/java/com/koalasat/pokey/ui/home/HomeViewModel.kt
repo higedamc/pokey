@@ -8,6 +8,7 @@ import com.koalasat.pokey.Pokey
 import com.koalasat.pokey.database.AppDatabase
 import com.koalasat.pokey.database.UserEntity
 import com.koalasat.pokey.models.EncryptedStorage
+import com.koalasat.pokey.utils.isValidHexPubKey
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -41,12 +42,15 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             val dao = appContext?.let { AppDatabase.getDatabase(it, "common").applicationDao() }
             if (dao != null) {
                 withContext(Dispatchers.IO) {
-                    val users = dao.getUsers()
+                    val (validUsers, invalidUsers) = dao.getUsers().partition { isValidHexPubKey(it.hexPub) }
+                    invalidUsers.forEach { dao.deleteUser(it) }
+
                     withContext(Dispatchers.Main) {
-                        _accountList.postValue(users)
-                        if (users.isNotEmpty()) {
-                            if (EncryptedStorage.inboxPubKey.value?.isEmpty() == true) EncryptedStorage.updateInboxPubKey(users.first().toString())
-                            if (EncryptedStorage.mutePubKey.value?.isEmpty() == true) EncryptedStorage.updateMutePubKey(users.first().toString())
+                        _accountList.postValue(validUsers)
+                        if (validUsers.isNotEmpty()) {
+                            val fallback = validUsers.first().hexPub
+                            if (!isValidHexPubKey(EncryptedStorage.inboxPubKey.value)) EncryptedStorage.updateInboxPubKey(fallback)
+                            if (!isValidHexPubKey(EncryptedStorage.mutePubKey.value)) EncryptedStorage.updateMutePubKey(fallback)
                         }
                     }
                 }

@@ -15,10 +15,12 @@ import com.koalasat.pokey.MainActivity
 import com.koalasat.pokey.Pokey
 import com.koalasat.pokey.R
 import com.koalasat.pokey.database.AppDatabase
+import com.koalasat.pokey.database.FollowEntity
 import com.koalasat.pokey.database.MuteEntity
 import com.koalasat.pokey.database.NotificationEntity
 import com.koalasat.pokey.database.RelayEntity
 import com.koalasat.pokey.database.UserEntity
+import androidx.room.withTransaction
 import com.vitorpamplona.ammolite.relays.COMMON_FEED_TYPES
 import com.vitorpamplona.ammolite.relays.Client
 import com.vitorpamplona.ammolite.relays.EVENT_FINDER_TYPES
@@ -30,11 +32,13 @@ import com.vitorpamplona.ammolite.relays.filters.SincePerRelayFilter
 import com.vitorpamplona.quartz.encoders.Nip19Bech32
 import com.vitorpamplona.quartz.encoders.Nip19Bech32.uriToRoute
 import com.vitorpamplona.quartz.encoders.toHexKey
+import com.vitorpamplona.quartz.events.ContactListEvent
 import com.vitorpamplona.quartz.events.Event
 import com.vitorpamplona.quartz.events.MuteListEvent
 import com.vitorpamplona.quartz.utils.TimeUtils
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
+import com.koalasat.pokey.utils.TorProxyManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -113,13 +117,14 @@ object NostrClient {
             db.applicationDao().insertRelay(entity)
 
             val relay = RelayPool.getRelay(url)
+            val useTor = EncryptedStorage.useTor.value == true
             if (Pokey.isEnabled.value == true && relay == null) {
                 RelayPool.addRelay(
                     Relay(
                         entity.url,
                         read = entity.read == 1,
                         write = entity.write == 1,
-                        forceProxy = false,
+                        forceProxy = useTor,
                         activeTypes = COMMON_FEED_TYPES,
                     ),
                 )
@@ -167,9 +172,10 @@ object NostrClient {
             )
         }
 
-        var subscription = EncryptedStorage.inboxSubscription.value
+        val subscriptions = db.applicationDao().getEnabledSubscriptions()
 
-        if (subscription?.isNotEmpty() == true) {
+        subscriptions.forEachIndexed { index, subscriptionEntity ->
+            val subscription = subscriptionEntity.value
             val (type, result) = when {
                 subscription.startsWith("npub", ignoreCase = true) -> parseBech32(subscription)
                 subscription.startsWith("nevent", ignoreCase = true) -> parseBech32(subscription)
@@ -184,12 +190,52 @@ object NostrClient {
                     else -> null
                 }
 
-                var authors = when (type) {
+                val subAuthors = when (type) {
                     "npub" -> listOf(result)
                     else -> null
                 }
 
-                if (tags != null || authors != null) {
+                if (tags != null || subAuthors != null) {
+                    Client.sendFilter(
+                        "$subscriptionSubscriptionId$index",
+                        listOf(
+                            TypedFilter(
+                                types = COMMON_FEED_TYPES,
+                                filter = SincePerRelayFilter(
+                                    kinds = listOf(1),
+                                    authors = subAuthors,
+                                    tags = tags,
+                                    since = RelayPool.getAll().associate { it.url to EOSETime(latestNotification) },
+                                ),
+                            ),
+                        ),
+                    )
+                }
+            }
+        }
+
+        val legacySubscription = EncryptedStorage.inboxSubscription.value
+        if (legacySubscription?.isNotEmpty() == true && subscriptions.isEmpty()) {
+            val (type, result) = when {
+                legacySubscription.startsWith("npub", ignoreCase = true) -> parseBech32(legacySubscription)
+                legacySubscription.startsWith("nevent", ignoreCase = true) -> parseBech32(legacySubscription)
+                legacySubscription.startsWith("#") -> Pair("hashtag", legacySubscription.replace("#", ""))
+                else -> Pair(null, null)
+            }
+
+            if (type != null && result != null) {
+                val tags = when (type) {
+                    "nevent" -> mapOf(Pair("e", listOf(result)))
+                    "hashtag" -> mapOf(Pair("t", listOf(result)))
+                    else -> null
+                }
+
+                val subAuthors = when (type) {
+                    "npub" -> listOf(result)
+                    else -> null
+                }
+
+                if (tags != null || subAuthors != null) {
                     Client.sendFilter(
                         subscriptionSubscriptionId,
                         listOf(
@@ -197,7 +243,7 @@ object NostrClient {
                                 types = COMMON_FEED_TYPES,
                                 filter = SincePerRelayFilter(
                                     kinds = listOf(1),
-                                    authors = authors,
+                                    authors = subAuthors,
                                     tags = tags,
                                     since = RelayPool.getAll().associate { it.url to EOSETime(latestNotification) },
                                 ),
@@ -394,7 +440,7 @@ object NostrClient {
                     TypedFilter(
                         types = COMMON_FEED_TYPES,
                         filter = SincePerRelayFilter(
-                            kinds = listOf(10000, 10002, 10050),
+                            kinds = listOf(10000, 10002, 10050, 3),
                             authors = authors,
                         ),
                     ),
@@ -411,6 +457,8 @@ object NostrClient {
             relays = defaultRelayUrls.map { RelayEntity(id = 0, url = it, kind = 0, createdAt = 0, read = 1, write = 1, hexPub = "") }
         }
 
+        val useTor = EncryptedStorage.useTor.value == true
+
         relays.forEach {
             Client.sendFilterOnlyIfDisconnected()
             if (RelayPool.getRelays(it.url).isEmpty()) {
@@ -419,7 +467,7 @@ object NostrClient {
                         it.url,
                         read = true,
                         write = false,
-                        forceProxy = false,
+                        forceProxy = useTor,
                         activeTypes = COMMON_FEED_TYPES,
                     ),
                 )
@@ -536,6 +584,32 @@ object NostrClient {
         }
     }
 
+    fun manageFollowList(context: Context, event: ContactListEvent) {
+        if (!event.hasVerifiedSignature()) return
+
+        CoroutineScope(Dispatchers.IO).launch {
+            val db = AppDatabase.getDatabase(context, "common")
+            val user = db.applicationDao().getUser(event.pubKey) ?: return@launch
+            val lastSyncedAt = user.followsSyncedAt ?: 0L
+
+            if (event.createdAt > lastSyncedAt) {
+                val followEntities = event.verifiedFollowKeySet().map {
+                    FollowEntity(id = 0, hexPub = event.pubKey, followedPub = it, createdAt = event.createdAt)
+                }
+
+                db.withTransaction {
+                    db.applicationDao().deleteFollowList(event.pubKey)
+                    db.applicationDao().insertFollows(followEntities)
+
+                    user.followsSyncedAt = event.createdAt
+                    db.applicationDao().updateUser(user)
+                }
+
+                Log.d("Pokey", "Follow list : ${followEntities.size} follows")
+            }
+        }
+    }
+
     fun publishMuteUser(context: Context, event: NotificationEntity) {
         CoroutineScope(Dispatchers.IO).launch {
             val db = AppDatabase.getDatabase(context, "common")
@@ -636,14 +710,33 @@ object NostrClient {
         )
     }
 
-    fun noteIsSubscription(event: Event): Boolean {
-        var subscription = EncryptedStorage.inboxSubscription.value
+    fun noteIsSubscription(event: Event, context: Context): Boolean {
+        val db = AppDatabase.getDatabase(context, "common")
+        val subscriptions = db.applicationDao().getEnabledSubscriptions()
 
-        if (subscription?.isNotEmpty() == true) {
+        for (subscriptionEntity in subscriptions) {
+            val subscription = subscriptionEntity.value
             val (type, result) = when {
                 subscription.startsWith("npub", ignoreCase = true) -> parseBech32(subscription)
                 subscription.startsWith("nevent", ignoreCase = true) -> parseBech32(subscription)
                 subscription.startsWith("#") -> Pair("hashtag", subscription.replace("#", ""))
+                else -> Pair(null, null)
+            }
+            val matched = when (type) {
+                "npub" -> event.pubKey == result
+                "nevent" -> event.taggedEvents().contains(result)
+                "hashtag" -> event.isTaggedHash(result.toString())
+                else -> false
+            }
+            if (matched) return true
+        }
+
+        val legacySubscription = EncryptedStorage.inboxSubscription.value
+        if (legacySubscription?.isNotEmpty() == true && subscriptions.isEmpty()) {
+            val (type, result) = when {
+                legacySubscription.startsWith("npub", ignoreCase = true) -> parseBech32(legacySubscription)
+                legacySubscription.startsWith("nevent", ignoreCase = true) -> parseBech32(legacySubscription)
+                legacySubscription.startsWith("#") -> Pair("hashtag", legacySubscription.replace("#", ""))
                 else -> Pair(null, null)
             }
             return when (type) {
@@ -652,9 +745,9 @@ object NostrClient {
                 "hashtag" -> event.isTaggedHash(result.toString())
                 else -> false
             }
-        } else {
-            return false
         }
+
+        return false
     }
 
     @SuppressLint("MissingPermission")

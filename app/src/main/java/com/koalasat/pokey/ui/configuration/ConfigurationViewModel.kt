@@ -24,8 +24,17 @@ class ConfigurationViewModel(application: Application) : AndroidViewModel(applic
     private val _maxPubKeys = MutableLiveData<Int>().apply { value = EncryptedStorage.maxPubKeys.value }
     val maxPubKeys: LiveData<Int> = _maxPubKeys
 
+    private val _useTor = MutableLiveData<Boolean>().apply { value = EncryptedStorage.useTor.value }
+    val useTor: LiveData<Boolean> = _useTor
+
     private val _newReplies = MutableLiveData<Boolean>()
     val newReplies: LiveData<Boolean> = _newReplies
+
+    private val _newRepliesFollowsOnly = MutableLiveData<Boolean>()
+    val newRepliesFollowsOnly: LiveData<Boolean> = _newRepliesFollowsOnly
+
+    private val _followsSynced = MutableLiveData<Boolean>()
+    val followsSynced: LiveData<Boolean> = _followsSynced
 
     private val _newZaps = MutableLiveData<Boolean>()
     val newZaps: LiveData<Boolean> = _newZaps
@@ -50,6 +59,10 @@ class ConfigurationViewModel(application: Application) : AndroidViewModel(applic
             _broadcast.postValue(value)
         }
 
+        EncryptedStorage.useTor.observeForever { value ->
+            _useTor.postValue(value)
+        }
+
         _userHexPubKey.observeForever {
             refreshData()
         }
@@ -65,6 +78,11 @@ class ConfigurationViewModel(application: Application) : AndroidViewModel(applic
         EncryptedStorage.updateMaxPubKeys(value)
     }
 
+    fun updateUseTor(value: Boolean) {
+        _useTor.postValue(value)
+        EncryptedStorage.updateUseTor(value)
+    }
+
     fun updateNotifyReplies(value: Boolean) {
         _newReplies.postValue(value)
         CoroutineScope(Dispatchers.IO).launch {
@@ -72,6 +90,18 @@ class ConfigurationViewModel(application: Application) : AndroidViewModel(applic
             val activeUser = dao.getUser(userHexPubKey.value.toString())
             if (activeUser != null) {
                 activeUser.notifyReplies = if (value) 1 else 0
+                dao.updateUser(activeUser)
+            }
+        }
+    }
+
+    fun updateNotifyRepliesFollowsOnly(value: Boolean) {
+        _newRepliesFollowsOnly.postValue(value)
+        CoroutineScope(Dispatchers.IO).launch {
+            val dao = AppDatabase.getDatabase(appContext, "common").applicationDao()
+            val activeUser = dao.getUser(userHexPubKey.value.toString())
+            if (activeUser != null) {
+                activeUser.notifyRepliesFollowsOnly = if (value) 1 else 0
                 dao.updateUser(activeUser)
             }
         }
@@ -158,9 +188,12 @@ class ConfigurationViewModel(application: Application) : AndroidViewModel(applic
             val dao = AppDatabase.getDatabase(appContext, "common").applicationDao()
             val activeUser = dao.getUser(userHexPubKey.value.toString())
             if (activeUser != null) {
+                val hasFollows = dao.countFollows(activeUser.hexPub) > 0
                 val mainHandler = Handler(Looper.getMainLooper())
                 mainHandler.post {
                     _newReplies.postValue(activeUser.notifyReplies == 1)
+                    _newRepliesFollowsOnly.postValue(activeUser.notifyRepliesFollowsOnly == 1)
+                    _followsSynced.postValue(activeUser.followsSyncedAt != null && hasFollows)
                     _newZaps.postValue(activeUser.notifyZaps == 1)
                     _newQuotes.postValue(activeUser.notifyQuotes == 1)
                     _newReactions.postValue(activeUser.notifyReactions == 1)

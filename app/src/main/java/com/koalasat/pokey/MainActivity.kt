@@ -22,6 +22,7 @@ import com.koalasat.pokey.databinding.ActivityMainBinding
 import com.koalasat.pokey.models.EncryptedStorage
 import com.koalasat.pokey.models.ExternalSigner
 import com.koalasat.pokey.models.NostrClient
+import com.koalasat.pokey.utils.BatteryOptimizationHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -38,6 +39,10 @@ class MainActivity : AppCompatActivity() {
 
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        if (BatteryOptimizationHelper.shouldShowBatteryPrompt(this)) {
+            BatteryOptimizationHelper.showBatteryOptimizationDialog(this)
+        }
 
         val navView: BottomNavigationView = binding.navView
 

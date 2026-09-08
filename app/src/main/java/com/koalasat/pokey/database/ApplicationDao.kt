@@ -140,4 +140,7 @@ interface ApplicationDao {
 
     @Query("SELECT EXISTS (SELECT 1 FROM follow WHERE hexPub = :hexPub AND followedPub = :followedPub)")
     fun existsFollow(hexPub: String, followedPub: String): Int
+
+    @Query("SELECT COUNT(*) FROM follow WHERE hexPub = :hexPub")
+    fun countFollows(hexPub: String): Int
 }

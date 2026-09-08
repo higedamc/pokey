@@ -20,6 +20,7 @@ import com.koalasat.pokey.database.MuteEntity
 import com.koalasat.pokey.database.NotificationEntity
 import com.koalasat.pokey.database.RelayEntity
 import com.koalasat.pokey.database.UserEntity
+import androidx.room.withTransaction
 import com.vitorpamplona.ammolite.relays.COMMON_FEED_TYPES
 import com.vitorpamplona.ammolite.relays.Client
 import com.vitorpamplona.ammolite.relays.EVENT_FINDER_TYPES
@@ -592,15 +593,17 @@ object NostrClient {
             val lastSyncedAt = user.followsSyncedAt ?: 0L
 
             if (event.createdAt > lastSyncedAt) {
-                db.applicationDao().deleteFollowList(event.pubKey)
-
                 val followEntities = event.verifiedFollowKeySet().map {
                     FollowEntity(id = 0, hexPub = event.pubKey, followedPub = it, createdAt = event.createdAt)
                 }
-                db.applicationDao().insertFollows(followEntities)
 
-                user.followsSyncedAt = event.createdAt
-                db.applicationDao().updateUser(user)
+                db.withTransaction {
+                    db.applicationDao().deleteFollowList(event.pubKey)
+                    db.applicationDao().insertFollows(followEntities)
+
+                    user.followsSyncedAt = event.createdAt
+                    db.applicationDao().updateUser(user)
+                }
 
                 Log.d("Pokey", "Follow list : ${followEntities.size} follows")
             }
